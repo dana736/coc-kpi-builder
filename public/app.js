@@ -16,14 +16,19 @@ $('buildForm').addEventListener('submit',async e=>{
   e.preventDefault();const btn=$('generateBtn');
   const token=window.turnstile?.getResponse(widgetId);
   if(!token)return notice('Complete the security check before generating your sheet.');
-  btn.disabled=true;btn.textContent='Creating your Google Sheet…';$('result').classList.add('hidden');
+  btn.disabled=true;btn.textContent='Building your Excel download…';$('result').classList.add('hidden');
   try{
     const f=new FormData(e.target);const body=Object.fromEntries(f.entries());
     body.reps=String(body.reps||'').split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
     body.turnstileToken=token;
-    const r=await api('generate',body);
-    $('result').classList.remove('hidden');$('result').textContent='Your private Google Sheet is ready! ';
-    const a=document.createElement('a');a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Open your KPI scorecard →';$('result').appendChild(a);
+    const response=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!response.ok){let message='Unable to generate the spreadsheet.';try{message=(await response.json()).error||message}catch{}throw new Error(message)}
+    const blob=await response.blob();
+    const name='Cash-Out-KPI-'+String(body.company||'Business').replace(/[^a-z0-9-_ ]/gi,'').trim().replace(/\s+/g,'-').slice(0,45)+'.xlsx';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    $('result').classList.remove('hidden');$('result').textContent='Your Excel KPI scorecard has downloaded. Open it in Excel, or upload it to Google Sheets.';
   }catch(err){notice(err.message)}finally{
     btn.disabled=false;btn.innerHTML='Build my KPI scorecard <span>→</span>';
     if(widgetId!==null)window.turnstile?.reset(widgetId);

@@ -1,12 +1,11 @@
 const limit=(s,n=150)=>typeof s==='string'?s.trim().slice(0,n):'';
 
 export function validate(body){
-  const company=limit(body.company,100), industry=limit(body.industry,100), email=limit(body.email,180);
+  const company=limit(body.company,100), industry=limit(body.industry,100);
   const names=[...new Set((Array.isArray(body.reps)?body.reps:[]).map(n=>limit(n,40)).filter(Boolean))].slice(0,15);
   const rev=Number(body.annualRevenue),goal=Number(body.revenueGoal),deal=Number(body.averageDeal);
   if(!company||!industry||names.length<1||!Number.isFinite(rev)||rev<0||rev>1e11||!Number.isFinite(goal)||goal<0||goal>1e11||!Number.isFinite(deal)||deal<0||deal>1e9) throw new Error('Enter valid business details, revenue figures and at least one salesperson.');
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw new Error('Enter a valid Google email address.');
-  return {company,industry,names,annualRevenue:rev,revenueGoal:goal,averageDeal:deal,email,model:limit(body.model,80)||'Appointments / consultations', notes:limit(body.notes,500)};
+  return {company,industry,names,annualRevenue:rev,revenueGoal:goal,averageDeal:deal,model:limit(body.model,80)||'Appointments / consultations', notes:limit(body.notes,500)};
 }
 const col=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s};
 const safeText=v=>{const s=String(v??'');return /^[=+@\-]/.test(s)?"'"+s:s;};
@@ -99,28 +98,77 @@ export async function aiAdvice(p){
     return Array.isArray(obj.actions)?obj.actions.filter(x=>typeof x==='string').slice(0,4).map(x=>limit(x,110)):[];
   }catch(e){console.warn('AI skipped; deterministic fallback',e.message);return []}finally{clearTimeout(timer)}
 }
-export async function createGoogleWorkbook(w,p){
-  const {GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REFRESH_TOKEN}=process.env;
-  if(!GOOGLE_CLIENT_ID||!GOOGLE_CLIENT_SECRET||!GOOGLE_REFRESH_TOKEN)throw new Error('Google OAuth server configuration missing');
-  const {google}=await import('googleapis');
-  const auth=new google.auth.OAuth2(GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET);
-  auth.setCredentials({refresh_token:GOOGLE_REFRESH_TOKEN});
-  const sheets=google.sheets({version:'v4',auth});
-  const drive=google.drive({version:'v3',auth});
-  const created=await sheets.spreadsheets.create({requestBody:{properties:{title:w.title},sheets:w.sheets},fields:'spreadsheetId,spreadsheetUrl'});
-  const id=created.data.spreadsheetId;
-  try {
-    await sheets.spreadsheets.values.batchUpdate({spreadsheetId:id,requestBody:{valueInputOption:'USER_ENTERED',data:w.values}});
-    await sheets.spreadsheets.batchUpdate({spreadsheetId:id,requestBody:{requests:w.requests}});
-    if(process.env.GOOGLE_OUTPUT_FOLDER_ID){
-      const m=await drive.files.get({fileId:id,fields:'parents'});
-      await drive.files.update({fileId:id,addParents:process.env.GOOGLE_OUTPUT_FOLDER_ID,removeParents:(m.data.parents||[]).join(','),fields:'id'});
+
+// Turn the existing four-tab, formula-driven workbook specification into a local Excel download.
+// No Google OAuth, Cloud project, shared service account, or member email required.
+export async function createExcelWorkbook(w,p){
+  const {default: ExcelJS}=await import('exceljs');
+  const book=new ExcelJS.Workbook();
+  book.creator='Cash Out Challenge';
+  book.title=w.title;
+  book.calcProperties.fullCalcOnLoad=true;
+  book.calcProperties.forceFullCalc=true;
+  const dark='1C2A3D',light='EAF0F7',gold='C5A36A';
+  for(let i=0;i<w.sheets.length;i++){
+    const {title}=w.sheets[i].properties;
+    const sh=book.addWorksheet(title,{views:[{state:'frozen',ySplit:title==='DAILY SALES KPI'?4:0}]});
+    sh.properties.defaultRowHeight=19;
+    sh.getColumn(1).width=34;
+    for(let c=2;c<=14;c++)sh.getColumn(c).width=18;
+    if(title==='DAILY SALES KPI'){ sh.getColumn(1).width=15;sh.getColumn(2).width=24;sh.getColumn(13).width=42;}
+    if(title==='EXECUTIVE DASHBOARD'){ sh.getColumn(1).width=29;sh.getColumn(2).width=23; }
+    if(title==='GROWTH ROADMAP'){sh.getColumn(1).width=45;sh.getColumn(2).width=25;}
+    for(const [ri,row] of w.values[i].values.entries()){
+      const excelRow=sh.getRow(ri+1);
+      for(const [ci,val] of row.entries()){
+        if(val===undefined||val===null||val==='')continue;
+        const cell=excelRow.getCell(ci+1);
+        if(typeof val==='string'&&val.startsWith('=')){
+          cell.value={formula:val.slice(1)};
+        } else if(typeof val==='string'&&val.startsWith("'")){
+          // ExcelJS uses typed text; no injection is possible for these members' strings.
+          cell.value=val.slice(1);
+          cell.numFmt='@';
+        }else cell.value=val;
+        if(ri>0)cell.alignment={vertical:'middle'};
+      }
     }
-    await drive.permissions.create({fileId:id,requestBody:{type:'user',role:'writer',emailAddress:p.email},sendNotificationEmail:true,fields:'id'});
-    return {id,url:created.data.spreadsheetUrl||`https://docs.google.com/spreadsheets/d/${id}/edit`};
-  }catch(e){
-    // Avoid leaving a partly populated or unshared workbook in the admin account.
-    try{await drive.files.delete({fileId:id})}catch(_){}
-    throw e;
+    const headline=sh.getRow(1);
+    headline.height=34;
+    for(let c=1;c<=Math.max(8,title==='DAILY SALES KPI'?13:8);c++){
+      const cell=headline.getCell(c);cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+dark}};
+      cell.font={name:'Aptos Display',size:c===1?16:11,bold:true,color:{argb:'FFFFFFFF'}};
+    }
+    for(const headerRow of (title==='DAILY SALES KPI'?[4]:title==='EXECUTIVE DASHBOARD'?[5,19]:[])){
+      const row=sh.getRow(headerRow);row.height=25;
+      for(let col=1;col<=(title==='DAILY SALES KPI'?13:8);col++){
+        const cell=row.getCell(col);
+        cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF'+light}};
+        cell.font={name:'Aptos',bold:true,color:{argb:'FF'+dark}};
+        cell.alignment={vertical:'middle',wrapText:true};
+      }
+    }
+    sh.getCell('A1').font={name:'Aptos Display',size:15,bold:true,color:{argb:'FFFFFFFF'}};
+    if(title==='DAILY SALES KPI'){
+      sh.autoFilter='A4:M504';
+      for(let r=5;r<=504;r++){
+        const date=sh.getCell('A'+r);date.numFmt='yyyy-mm-dd';
+        const salesperson=sh.getCell('B'+r);
+        salesperson.dataValidation={type:'list',allowBlank:true,formulae:['"'+p.names.map(n=>n.replace(/"/g,'')).join(',')+'"']};
+        for(const col of ['J','K'])sh.getCell(col+r).numFmt='0.0%';
+        for(const col of ['H','I','L'])sh.getCell(col+r).numFmt='#,##0.00';
+      }
+    }
+    if(title==='EXECUTIVE DASHBOARD'){
+      for(const r of [13,14,15])sh.getCell('B'+r).numFmt='0.0%';
+      for(let r=20;r<20+p.names.length;r++)sh.getCell('H'+r).numFmt='0.0%';
+      for(const r of [11,12,16])sh.getCell('B'+r).numFmt='#,##0.00';
+    }
+    if(title==='GROWTH ROADMAP'){
+      for(let r=5;r<=9;r++)sh.getCell('B'+r).numFmt='#,##0.00';
+    }
+    sh.pageSetup={orientation:'landscape',fitToPage:true,fitToWidth:1};
   }
+  const buffer=await book.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }

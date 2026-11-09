@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {getStore} from '@netlify/blobs';
 import {json,verifyTurnstile,clientIp} from './_shared.mjs';
-import {validate,buildWorkbook,aiAdvice,createGoogleWorkbook} from './_builder.mjs';
+import {validate,buildWorkbook,aiAdvice,createExcelWorkbook} from './_builder.mjs';
 
 const MAX_IP_DAILY = Math.max(1,Math.min(30,Number(process.env.DAILY_PER_IP_LIMIT)||3));
 const MAX_GLOBAL_DAILY = Math.max(1,Math.min(10000,Number(process.env.DAILY_GLOBAL_LIMIT)||200));
@@ -22,12 +22,18 @@ export default async request => {
     if((ipCurrent?.count||0)>=MAX_IP_DAILY || (globalCurrent?.count||0)>=MAX_GLOBAL_DAILY) return json({error:'Daily generation limit reached. Please try again tomorrow or contact support.'},429);
     const advice=await aiAdvice(input);
     const workbook=buildWorkbook(input,advice);
-    const file=await createGoogleWorkbook(workbook,input);
+    const file=await createExcelWorkbook(workbook,input);
     await Promise.all([
       store.setJSON(ipKey,{count:(ipCurrent?.count||0)+1}),
       store.setJSON(globalKey,{count:(globalCurrent?.count||0)+1})
     ]).catch(err=>console.error('Limit counter update failed after successful generation',err));
-    return json({ok:true,url:file.url,title:workbook.title});
+    const safeName=input.company.replace(/[^a-z0-9-_ ]/gi,'').trim().replace(/\s+/g,'-').slice(0,45)||'business';
+    return new Response(new Uint8Array(file),{status:200,headers:{
+      'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':`attachment; filename="Cash-Out-KPI-${safeName}.xlsx"`,
+      'Cache-Control':'no-store',
+      'X-Content-Type-Options':'nosniff'
+    }});
   } catch (e) {
     console.error('generate request',e);
     return json({error:e.message?.startsWith('Enter ') ? e.message : 'Unable to generate the sheet. Please try again or contact support.'},502);
