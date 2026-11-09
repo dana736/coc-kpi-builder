@@ -30,3 +30,7 @@ npm test
 ```
 
 Use Node.js 20+. If a browser test does not download a file, inspect the Netlify **Functions** logs for `generate` and the browser error.
+
+
+## KPI dashboard upgrade
+This version adds a visual KPI DASHBOARD and a separate MARKETING FUNNEL tracking sheet while preserving the original four workbook tabs, existing sales-rep formulas, Netlify endpoints, and Kajabi iframe. Add campaign/day-level entries in MARKETING FUNNEL and salesperson/day-level entries in DAILY SALES KPI. Do not duplicate ad spend per rep. Funnel reference ranges are illustrative values supplied in the example screenshot, not verified industry benchmarks. The downloadable Excel file recalculates KPI cards when opened in Excel or imported into Google Sheets. No additional credentials are required.

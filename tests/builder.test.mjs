@@ -12,8 +12,10 @@ test('creates an actual Excel workbook with formulas and the four tabs',async()=
  const p=validate(b),bytes=await createExcelWorkbook(buildWorkbook(p),p);
  assert.ok(bytes.length>15000);
  const wb=new ExcelJS.Workbook();await wb.xlsx.load(bytes);
- assert.deepEqual(wb.worksheets.map(s=>s.name),['START HERE','EXECUTIVE DASHBOARD','DAILY SALES KPI','GROWTH ROADMAP']);
+ assert.deepEqual(wb.worksheets.map(s=>s.name),['KPI DASHBOARD','MARKETING FUNNEL','START HERE','EXECUTIVE DASHBOARD','DAILY SALES KPI','GROWTH ROADMAP']);
  assert.match(wb.getWorksheet('DAILY SALES KPI').getCell('J5').value.formula,/E5\/D5/);
  assert.match(wb.getWorksheet('GROWTH ROADMAP').getCell('B10').value.formula,/ROUNDUP/);
  assert.equal(wb.getWorksheet('EXECUTIVE DASHBOARD').getCell('A20').value,'Alex');
+ assert.match(wb.getWorksheet('KPI DASHBOARD').getCell('A5').value.formula,/MARKETING FUNNEL/);
+ assert.match(wb.getWorksheet('MARKETING FUNNEL').getCell('V6').value.formula,/P6-Q6/);
 });
