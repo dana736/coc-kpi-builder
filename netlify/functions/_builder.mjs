@@ -113,7 +113,7 @@ export async function createExcelWorkbook(w,p){
   const dark='1C2A3D',light='EAF0F7',gold='C5A36A';
   for(let i=0;i<w.sheets.length;i++){
     const {title}=w.sheets[i].properties;
-    const sh=book.addWorksheet(title,{views:[{state:'frozen',ySplit:title==='DAILY SALES KPI'?4:0}]});
+    const sh=book.addWorksheet(title,title==='DAILY SALES KPI'?{views:[{state:'frozen',ySplit:4}]}:{});
     sh.properties.defaultRowHeight=19;
     sh.getColumn(1).width=34;
     for(let c=2;c<=14;c++)sh.getColumn(c).width=18;

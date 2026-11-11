@@ -18,4 +18,5 @@ test('creates an actual Excel workbook with formulas and the four tabs',async()=
  assert.equal(wb.getWorksheet('EXECUTIVE DASHBOARD').getCell('A20').value,'Alex');
  assert.match(wb.getWorksheet('KPI DASHBOARD').getCell('A5').value.formula,/MARKETING FUNNEL/);
  assert.match(wb.getWorksheet('MARKETING FUNNEL').getCell('V6').value.formula,/P6-Q6/);
+ for(const name of ['START HERE','EXECUTIVE DASHBOARD','GROWTH ROADMAP']) assert.ok(!wb.getWorksheet(name).views.some(v=>v.state==='frozen' && !v.ySplit && !v.xSplit),`${name} must not have zero-size frozen panes`);
 });
