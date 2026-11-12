@@ -34,3 +34,12 @@ Use Node.js 20+. If a browser test does not download a file, inspect the Netlify
 
 ## KPI dashboard upgrade
 This version adds a visual KPI DASHBOARD and a separate MARKETING FUNNEL tracking sheet while preserving the original four workbook tabs, existing sales-rep formulas, Netlify endpoints, and Kajabi iframe. Add campaign/day-level entries in MARKETING FUNNEL and salesperson/day-level entries in DAILY SALES KPI. Do not duplicate ad spend per rep. Funnel reference ranges are illustrative values supplied in the example screenshot, not verified industry benchmarks. The downloadable Excel file recalculates KPI cards when opened in Excel or imported into Google Sheets. No additional credentials are required.
+
+## Cash Out Challenge business-model upgrade (November 2026)
+
+- The frontend now uses the supplied Cash Out Challenge logo and adds business model, channel, marketing spend, monthly audience, gross margin and sales-cycle inputs.
+- Business model options: appointments, e-commerce, webinar, retail, B2B, services, subscriptions, inbound phone, outbound and other. The server whitelists these model values and uses distinct marketing funnel headings and dashboard conversion labels for each.
+- **Excel download has FOUR tabs:** KPI DASHBOARD (including the optional team scorecard), MARKETING FUNNEL, START HERE & GROWTH, and DAILY SALES KPI.
+- Existing Turnstile, rate limits, Netlify API routing, optional OpenAI guidance and direct XLSX download are unchanged.
+- Upload the complete unzipped folder contents to your GitHub repository. `public/index.html` alone does not contain Excel generation code.
+- Test Excel output after Netlify deployment with one appointment business and one e-commerce business. This environment could run syntax/logic tests but not a real ExcelJS XLSX write/open test; final Excel compatibility should be confirmed on your desktop.

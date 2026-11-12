@@ -1,11 +1,30 @@
 const limit=(s,n=150)=>typeof s==='string'?s.trim().slice(0,n):'';
 
+
+// All business models use the same stable source columns and formulas. Their
+// labels and dashboard conversion steps change according to the sales journey.
+export const MODEL_PRESETS={
+  'Appointments / consultations':{labels:['Leads','Registrations','Front-End Buyers','Appointments Booked','Calls Scheduled','Calls Taken','Offers Made','Deals Won'],steps:['Appointments booked','Calls taken','Lead → appointment rate','Show rate','Close rate'],daily:['Leads','Booked','Showed','Offers','Closed']},
+  'E-commerce / online store':{labels:['Store Sessions','Product Views','Product Engagers','Add to Carts','Checkout Starts','Completed Checkouts','Upsells','Orders Placed'],steps:['Add to carts','Completed checkouts','Session → cart rate','Checkout completion','Session → order rate'],daily:['Visitors Assisted','Carts Assisted','Orders Assisted','Upsell Offers','Orders Won']},
+  'Webinar / virtual event':{labels:['Leads','Webinar Registrations','Webinar Attendees','Calls Booked','Calls Scheduled','Calls Attended','Offers Made','Customers Won'],steps:['Calls booked','Calls attended','Lead → call rate','Call attendance rate','Call close rate'],daily:['Leads','Booked','Attended','Offers','Closed']},
+  'Retail / in-person':{labels:['Store Visitors','Product Inquiries','Product Demos','Consultations','Quotes Requested','Sales Conversations','Offers Made','Purchases'],steps:['Consultations','Sales conversations','Visitor → consultation','Consultation completion','Visitor → purchase'],daily:['Visitors Assisted','Consultations','Demos','Offers','Purchases']},
+  'B2B / pipeline sales':{labels:['New Leads','Contacts Reached','Qualified Leads','Meetings Booked','Meetings Scheduled','Meetings Held','Proposals Sent','Deals Won'],steps:['Meetings booked','Meetings held','Lead → meeting rate','Meeting attendance','Win rate'],daily:['New Leads','Meetings Booked','Meetings Held','Proposals','Deals Won']},
+  'Services / local business':{labels:['New Inquiries','Estimates Requested','Qualified Prospects','Jobs Booked','Visits Scheduled','Visits Completed','Quotes Sent','Jobs Won'],steps:['Jobs booked','Visits completed','Inquiry → booking','Visit completion','Inquiry → job win'],daily:['Inquiries','Jobs Booked','Visits Completed','Quotes','Jobs Won']},
+  'Subscriptions / SaaS':{labels:['Website Visitors','Trial Signups','Trial Activations','Demo Requests','Trials Started','Paid Conversions','Upgrades','New Customers'],steps:['Demo requests','Paid conversions','Visitor → demo rate','Trial → paid proxy','Visitor → customer rate'],daily:['Visitors Assisted','Demos','Paid Conversions','Upgrades','New Customers']},
+  'Inbound phone leads':{labels:['Incoming Leads','Qualified Calls','Engaged Leads','Appointments Booked','Calls Scheduled','Calls Taken','Offers Made','Deals Won'],steps:['Appointments booked','Calls taken','Lead → appointment rate','Show rate','Close rate'],daily:['Leads','Booked','Showed','Offers','Closed']},
+  'Outbound prospecting':{labels:['New Prospects','Contacts Reached','Qualified Leads','Appointments Booked','Calls Scheduled','Calls Taken','Proposals Made','Deals Won'],steps:['Appointments booked','Calls taken','Prospect → booking rate','Show rate','Close rate'],daily:['Prospects','Booked','Showed','Proposals','Closed']},
+  'Other':{labels:['Leads / Visits','Early Engagements','Qualified Prospects','Stage 1 Conversions','Stage 2 Started','Stage 2 Completed','Offers','Customers Won'],steps:['Stage 1 conversions','Stage 2 completions','Lead → stage 1 rate','Stage 2 completion','Lead → customer rate'],daily:['Leads','Stage 1','Stage 2','Offers','Won']}
+};
+export function modelPreset(model){return MODEL_PRESETS[model]||MODEL_PRESETS['Other'];}
 export function validate(body){
   const company=limit(body.company,100), industry=limit(body.industry,100);
   const names=[...new Set((Array.isArray(body.reps)?body.reps:[]).map(n=>limit(n,40)).filter(Boolean))].slice(0,15);
   const rev=Number(body.annualRevenue),goal=Number(body.revenueGoal),deal=Number(body.averageDeal);
-  if(!company||!industry||names.length<1||!Number.isFinite(rev)||rev<0||rev>1e11||!Number.isFinite(goal)||goal<0||goal>1e11||!Number.isFinite(deal)||deal<0||deal>1e9) throw new Error('Enter valid business details, revenue figures and at least one salesperson.');
-  return {company,industry,names,annualRevenue:rev,revenueGoal:goal,averageDeal:deal,model:limit(body.model,80)||'Appointments / consultations',funnelType:limit(body.funnelType,40)||'Custom / other',notes:limit(body.notes,500)};
+  if(!company||!industry||!Number.isFinite(rev)||rev<0||rev>1e11||!Number.isFinite(goal)||goal<0||goal>1e11||!Number.isFinite(deal)||deal<0||deal>1e9) throw new Error('Enter valid business details, revenue figures and at least one salesperson.');
+  const requestedModel=limit(body.model,80); const model=MODEL_PRESETS[requestedModel]?requestedModel:'Other';
+  const marketingSpend=Number(body.marketingSpend||0),grossMargin=Number(body.grossMargin||0),monthlyLeads=Number(body.monthlyLeads||0);
+  if(![marketingSpend,grossMargin,monthlyLeads].every(Number.isFinite)||marketingSpend<0||marketingSpend>1e10||grossMargin<0||grossMargin>100||monthlyLeads<0||monthlyLeads>1e8)throw new Error('Enter valid marketing spend, gross margin and lead volume.');
+  return {company,industry,names:names.length?names:['Team'],annualRevenue:rev,revenueGoal:goal,averageDeal:deal,model,funnelType:limit(body.funnelType,40)||'Custom / other',notes:limit(body.notes,500),marketingSpend,grossMargin,monthlyLeads,salesCycle:limit(body.salesCycle,40),primaryChannel:limit(body.primaryChannel,80)};
 }
 const col=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s};
 const safeText=v=>{const s=String(v??'');return /^[=+@\-]/.test(s)?"'"+s:s;};
@@ -106,6 +125,8 @@ export async function createExcelWorkbook(w,p){
   const book=new ExcelJS.Workbook();
   addVisualDashboard(book,p);
   addMarketingFunnel(book,p);
+  addStartGrowth(book,p,w);
+  addRepScorecard(book,p);
   book.creator='Cash Out Challenge';
   book.title=w.title;
   book.calcProperties.fullCalcOnLoad=true;
@@ -113,6 +134,7 @@ export async function createExcelWorkbook(w,p){
   const dark='1C2A3D',light='EAF0F7',gold='C5A36A';
   for(let i=0;i<w.sheets.length;i++){
     const {title}=w.sheets[i].properties;
+    if(title!=='DAILY SALES KPI')continue;
     const sh=book.addWorksheet(title,title==='DAILY SALES KPI'?{views:[{state:'frozen',ySplit:4}]}:{});
     sh.properties.defaultRowHeight=19;
     sh.getColumn(1).width=34;
@@ -152,6 +174,9 @@ export async function createExcelWorkbook(w,p){
     }
     sh.getCell('A1').font={name:'Aptos Display',size:15,bold:true,color:{argb:'FFFFFFFF'}};
     if(title==='DAILY SALES KPI'){
+      const preset=modelPreset(p.model);
+      for(const [i,label] of preset.daily.entries())sh.getRow(4).getCell(i+3).value=label;
+      sh.getCell('B4').value='Team member';
       sh.autoFilter='A4:M504';
       for(let r=5;r<=504;r++){
         const date=sh.getCell('A'+r);date.numFmt='yyyy-mm-dd';
@@ -202,7 +227,8 @@ function addMarketingFunnel(book,p){
   sh.mergeCells('A1:W1');sh.getCell('A1').value='CASH OUT CHALLENGE  |  MARKETING FUNNEL TRACKER';sh.getCell('A1').fill=fill(NAVY);sh.getCell('A1').font={name:'Aptos Display',size:17,bold:true,color:{argb:'FF'+WHITE}};sh.getRow(1).height=35;
   sh.mergeCells('A2:W2');sh.getCell('A2').value='One row per day AND lead source/campaign. Enter acquisition metrics here; enter rep activity in DAILY SALES KPI. Do not add campaign spend to multiple rep rows.';sh.getCell('A2').font={italic:true,color:{argb:'FF'+GRAY}};sh.getRow(2).height=25;
   sh.mergeCells('A3:W3');sh.getCell('A3').value='Blank = unreported; zero = confirmed none. ROAS uses cash collected / ad spend. Contracted value is NOT cash. Benchmark ranges below are illustrative only.';sh.getCell('A3').font={italic:true,color:{argb:'FF'+GRAY}};
-  const headers=['Date','Channel','Campaign / Source','Ad Spend','Impressions','Clicks','New Leads','Registrations','Front-End Buyers','Appts Booked','On Calendar','Calls Taken','Offers Made','Deals Won','Contracted Value','Cash Collected','Refunds','Cost / Lead','Lead → Booked','Show Rate','Close Rate','Cash ROAS','Contract ROAS'];
+  const preset=modelPreset(p.model);
+  const headers=['Date','Channel','Campaign / Source','Ad Spend','Impressions','Clicks',...preset.labels,'Contracted Value','Cash Collected','Refunds',`Cost / ${preset.labels[0]}`,`${preset.labels[0]} → ${preset.labels[3]}`,`${preset.labels[4]} → ${preset.labels[5]}`,`${preset.labels[5]} → ${preset.labels[7]}`,'Cash ROAS','Contract ROAS'];
   const hr=sh.getRow(5);headers.forEach((h,i)=>{let c=hr.getCell(i+1);c.value=h;c.fill=fill(NAVY);c.font={name:'Aptos',size:10,bold:true,color:{argb:'FF'+WHITE}};c.alignment={vertical:'middle',wrapText:true}});hr.height=34;
   for(let r=6;r<=505;r++){
     sh.getCell('R'+r).value={formula:`IFERROR(D${r}/G${r},0)`};
@@ -228,49 +254,50 @@ function addVisualDashboard(book,p){
   const sh=book.addWorksheet('KPI DASHBOARD',{views:[{showGridLines:false,zoomScale:80}]});
   for(let c=1;c<=18;c++)sh.getColumn(c).width=12;
   sh.getColumn(1).width=17;sh.getColumn(18).width=17;
-  banner(sh,'CASH OUT  |  KPI COMMAND CENTER',`${p.company}  •  ${p.industry}  •  ${p.funnelType}  •  Edit marketing figures in MARKETING FUNNEL and rep results in DAILY SALES KPI`);
+  const preset=modelPreset(p.model);
+  banner(sh,'CASH OUT  |  KPI COMMAND CENTER',`${p.company}  •  ${p.model}  •  Enter campaign data in MARKETING FUNNEL and optional staff data in DAILY SALES KPI`);
   card(sh,[4,1,6,6],'Cash collected (net of refunds)',"SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505)",'currency');
-  card(sh,[4,7,6,12],'Contracted revenue',"SUM('MARKETING FUNNEL'!O6:O505)",'currency');
+  card(sh,[4,7,6,12],p.model==='E-commerce / online store'?'Gross sales':'Contracted revenue',"SUM('MARKETING FUNNEL'!O6:O505)",'currency');
   card(sh,[4,13,6,18],'Cash ROAS',"IFERROR((SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505))/SUM('MARKETING FUNNEL'!D6:D505),0)",'ratio');
   card(sh,[8,1,10,6],'Ad spend',"SUM('MARKETING FUNNEL'!D6:D505)",'currency');
-  card(sh,[8,7,10,12],'Deals won',"SUM('MARKETING FUNNEL'!N6:N505)");
-  card(sh,[8,13,10,18],'Average contract value',"IFERROR(SUM('MARKETING FUNNEL'!O6:O505)/SUM('MARKETING FUNNEL'!N6:N505),0)",'currency');
+  card(sh,[8,7,10,12],preset.labels[7],"SUM('MARKETING FUNNEL'!N6:N505)");
+  card(sh,[8,13,10,18],p.model==='E-commerce / online store'?'Average order value':'Average contract value',"IFERROR(SUM('MARKETING FUNNEL'!O6:O505)/SUM('MARKETING FUNNEL'!N6:N505),0)",'currency');
   section(sh,12,'THE SALES FUNNEL');
-  card(sh,[14,1,16,6],'Leads',"SUM('MARKETING FUNNEL'!G6:G505)");
-  card(sh,[14,7,16,12],'Appointments booked',"SUM('MARKETING FUNNEL'!J6:J505)");
-  card(sh,[14,13,16,18],'Calls taken',"SUM('MARKETING FUNNEL'!L6:L505)");
-  card(sh,[18,1,20,6],'Lead → appointment rate',"IFERROR(SUM('MARKETING FUNNEL'!J6:J505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'percent');
-  card(sh,[18,7,20,12],'Show rate',"IFERROR(SUM('MARKETING FUNNEL'!L6:L505)/SUM('MARKETING FUNNEL'!K6:K505),0)",'percent');
-  card(sh,[18,13,20,18],'Close rate',"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'percent');
+  card(sh,[14,1,16,6],preset.labels[0],"SUM('MARKETING FUNNEL'!G6:G505)");
+  card(sh,[14,7,16,12],preset.steps[0],"SUM('MARKETING FUNNEL'!J6:J505)");
+  card(sh,[14,13,16,18],preset.steps[1],"SUM('MARKETING FUNNEL'!L6:L505)");
+  card(sh,[18,1,20,6],preset.steps[2],"IFERROR(SUM('MARKETING FUNNEL'!J6:J505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'percent');
+  card(sh,[18,7,20,12],preset.steps[3],"IFERROR(SUM('MARKETING FUNNEL'!L6:L505)/SUM('MARKETING FUNNEL'!K6:K505),0)",'percent');
+  card(sh,[18,13,20,18],preset.steps[4],p.model==='E-commerce / online store'||p.model==='Retail / in-person'||p.model==='Subscriptions / SaaS'?"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!G6:G505),0)":"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'percent');
   section(sh,22,'ACQUISITION EFFICIENCY');
-  card(sh,[24,1,26,6],'Cost per lead',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'currency');
-  card(sh,[24,7,26,12],'Cost per call taken',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency');
+  card(sh,[24,1,26,6],`Cost per ${preset.labels[0].toLowerCase()}`,"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'currency');
+  card(sh,[24,7,26,12],`Cost per ${preset.labels[5].toLowerCase()}`,"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency');
   card(sh,[24,13,26,18],'Customer acquisition cost',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!N6:N505),0)",'currency');
-  card(sh,[28,1,30,6],'Cash collected / call',"IFERROR((SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505))/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency');
-  card(sh,[28,7,30,12],'Cost per booking',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!J6:J505),0)",'currency');
+  card(sh,[28,1,30,6],`Cash / ${preset.labels[5].toLowerCase()}`,"IFERROR((SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505))/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency');
+  card(sh,[28,7,30,12],`Cost per ${preset.labels[3].toLowerCase()}`,"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!J6:J505),0)",'currency');
   card(sh,[28,13,30,18],'Contracted ROAS',"IFERROR(SUM('MARKETING FUNNEL'!O6:O505)/SUM('MARKETING FUNNEL'!D6:D505),0)",'ratio');
   section(sh,32,'ADDITIONAL CONVERSION + CASH QUALITY METRICS');
   setTable(sh,34,[
     ['Cash not yet collected',"MAX(0,SUM('MARKETING FUNNEL'!O6:O505)-SUM('MARKETING FUNNEL'!P6:P505))",'currency'],
-    ['No-show rate',"IFERROR(1-SUM('MARKETING FUNNEL'!L6:L505)/SUM('MARKETING FUNNEL'!K6:K505),0)",'percent'],
-    ['Lead → won deal rate',"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'percent'],
-    ['Offer → won deal rate',"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!M6:M505),0)",'percent'],
-    ['Average collected / deal',"IFERROR((SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505))/SUM('MARKETING FUNNEL'!N6:N505),0)",'currency'],
-    ['Cost / registration',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!H6:H505),0)",'currency'],
-    ['Buyer → appointment',"IFERROR(SUM('MARKETING FUNNEL'!J6:J505)/SUM('MARKETING FUNNEL'!I6:I505),0)",'percent'],
-    ['Buyer → won deal',"IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!I6:I505),0)",'percent'],
-    ['Cost / attended call',"IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency'],
-    ['Calls on calendar',"SUM('MARKETING FUNNEL'!K6:K505)"],
+    [p.model==='E-commerce / online store'?'Checkout abandonment':p.model==='Subscriptions / SaaS'?'Trial non-conversion':'Stage 2 non-completion',"IFERROR(1-SUM('MARKETING FUNNEL'!L6:L505)/SUM('MARKETING FUNNEL'!K6:K505),0)",'percent'],
+    [`${preset.labels[0]} → ${preset.labels[7]}`, "IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!G6:G505),0)",'percent'],
+    [`${preset.labels[6]} → ${preset.labels[7]}`, "IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!M6:M505),0)",'percent'],
+    [`Average cash / ${preset.labels[7].toLowerCase()}`, "IFERROR((SUM('MARKETING FUNNEL'!P6:P505)-SUM('MARKETING FUNNEL'!Q6:Q505))/SUM('MARKETING FUNNEL'!N6:N505),0)",'currency'],
+    [`Cost / ${preset.labels[1].toLowerCase()}`, "IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!H6:H505),0)",'currency'],
+    [`${preset.labels[2]} → ${preset.labels[3]}`, "IFERROR(SUM('MARKETING FUNNEL'!J6:J505)/SUM('MARKETING FUNNEL'!I6:I505),0)",'percent'],
+    [`${preset.labels[2]} → ${preset.labels[7]}`, "IFERROR(SUM('MARKETING FUNNEL'!N6:N505)/SUM('MARKETING FUNNEL'!I6:I505),0)",'percent'],
+    [`Cost / ${preset.labels[5].toLowerCase()}`, "IFERROR(SUM('MARKETING FUNNEL'!D6:D505)/SUM('MARKETING FUNNEL'!L6:L505),0)",'currency'],
+    [preset.labels[4], "SUM('MARKETING FUNNEL'!K6:K505)"],
     ['Gross cash collected',"SUM('MARKETING FUNNEL'!P6:P505)",'currency'],
     ['Refunds',"SUM('MARKETING FUNNEL'!Q6:Q505)",'currency']
   ]);
   // Helper data within this sheet powers a real chart without a fragile pivot-table dependency.
   sh.getCell('J34').value='FUNNEL STAGE';sh.getCell('K34').value='VOLUME';
-  const funnels=[['Leads',"SUM('MARKETING FUNNEL'!G6:G505)"],['Booked',"SUM('MARKETING FUNNEL'!J6:J505)"],['Calls taken',"SUM('MARKETING FUNNEL'!L6:L505)"],['Deals won',"SUM('MARKETING FUNNEL'!N6:N505)"]];
+  const funnels=[[preset.labels[0],"SUM('MARKETING FUNNEL'!G6:G505)"],[preset.labels[3],"SUM('MARKETING FUNNEL'!J6:J505)"],[preset.steps[1],"SUM('MARKETING FUNNEL'!L6:L505)"],[preset.labels[7],"SUM('MARKETING FUNNEL'!N6:N505)"]];
   funnels.forEach(([label,formula],i)=>{sh.getCell('J'+(35+i)).value=label;sh.getCell('K'+(35+i)).value={formula};});
   for(let r=35;r<=38;r++){sh.getCell('J'+r).fill=fill(PALE);sh.getCell('K'+r).fill=fill(PALE);sh.getCell('K'+r).font={bold:true,color:{argb:'FF'+GREEN}};}
-  section(sh,54,'FUNNEL REFERENCE RANGES (PLANNING STARTING POINTS, NOT INDUSTRY GUARANTEES)');
-  sh.mergeCells('A56:R56');sh.getCell('A56').value='VSL: Lead → booked 10–20%; show 50–75%; close 15–35%. LTO: buyer → appointment 20–40%; show 60–90%; close 25–50%.';
+  section(sh,54,'FUNNEL CONTEXT (ILLUSTRATIVE ONLY)');
+  sh.mergeCells('A56:R56');sh.getCell('A56').value=p.funnelType.includes('VSL')?'VSL example: lead → booked 10–20%; show 50–75%; close 15–35%.':p.funnelType.includes('LTO')?'LTO example: buyer → appointment 20–40%; show 60–90%; close 25–50%.':`Your business model: ${p.model}. Track actual funnel rates and set targets from your own results.`;
   sh.mergeCells('A57:R57');sh.getCell('A57').value='These are illustrative ranges from the supplied image, NOT verified benchmarks. Your actual targets depend on channel, offer, audience, definition and attribution.';
   sh.mergeCells('A59:R59');sh.getCell('A59').value='⚠ Dashboard does not combine MARKETING FUNNEL and DAILY SALES KPI totals. Keep both datasets consistent; marketing values must be entered, not guessed.';
   for(const r of [56,57,59]){const c=sh.getCell('A'+r);c.alignment={wrapText:true,vertical:'middle'};c.font={color:{argb:'FF'+GRAY},italic:true,size:10};sh.getRow(r).height=32;}
@@ -278,4 +305,57 @@ function addVisualDashboard(book,p){
   sh.getCell('M35').value='CURRENT ANNUAL REVENUE';sh.getCell('O35').value=p.annualRevenue;sh.getCell('O35').numFmt=curr;
   sh.getCell('M36').value='REVENUE GAP';sh.getCell('O36').value={formula:'MAX(0,O34-O35)'};sh.getCell('O36').numFmt=curr;
   sh.pageSetup={orientation:'landscape',fitToPage:true,fitToWidth:1,paperSize:9};
+}
+
+// Consolidate company setup and growth plan into one tab. All calculations
+// still refer to editable cells, and original w spec remains available for tests.
+function addStartGrowth(book,p,w){
+ const sh=book.addWorksheet('START HERE & GROWTH',{views:[{showGridLines:false}]});
+ sh.getColumn('A').width=43;sh.getColumn('B').width=30;
+ for(let c=3;c<=10;c++)sh.getColumn(c).width=16;
+ banner(sh,'CASH OUT  |  SETUP + GROWTH PLAN',`${p.company} • ${p.model} • Start here, then enter marketing activity in MARKETING FUNNEL`,10);
+ const rows=[
+  ['COMPANY PROFILE',null],['Company',safeText(p.company)],['Industry',safeText(p.industry)],['Sales model',p.model],['Sales funnel',p.funnelType],
+  ['Primary marketing channel',safeText(p.primaryChannel||'Not provided')],['Annual revenue',p.annualRevenue],['Annual revenue goal',p.revenueGoal],
+  ['Average transaction value',p.averageDeal],['Monthly marketing spend (estimate)',p.marketingSpend],['Gross margin % (optional)',p.grossMargin/100],
+  ['Monthly leads / visitors (estimate)',p.monthlyLeads],['Sales cycle (optional)',safeText(p.salesCycle||'Not provided')],
+  ['Team members',safeText(p.names.join(', '))],['Biggest sales challenge',safeText(p.notes||'Not provided')]
+ ];
+ rows.forEach(([name,value],i)=>{const r=i+4;sh.getCell('A'+r).value=name;if(value!==null)sh.getCell('B'+r).value=value;sh.getRow(r).height=23;});
+ section(sh,21,'GROWTH ROADMAP',10);
+ const growth=[
+  ['Current annual revenue',"B10"],['Annual revenue goal',"B11"],['Annual revenue gap','MAX(0,B23-B22)'],['Monthly revenue gap','B24/12'],['Average transaction value',"B12"],
+  ['Additional annual transactions needed','IFERROR(ROUNDUP(B24/B26,0),0)'],['Additional monthly transactions needed','IFERROR(ROUNDUP(B27/12,0),0)'],
+  ['Annual marketing budget (current pace)','B13*12'],['Implied growth target %','IFERROR(B24/B22,0)']
+ ];
+ growth.forEach(([label,formula],i)=>{const r=22+i;sh.getCell('A'+r).value=label;sh.getCell('B'+r).value={formula};sh.getRow(r).height=24;});
+ section(sh,34,'HOW TO USE',10);
+ const instructions=[
+  '1. Enter campaign/source activity into MARKETING FUNNEL. Only type in input columns A–Q.',
+  '2. KPI DASHBOARD calculates performance automatically from MARKETING FUNNEL.',
+  '3. DAILY SALES KPI is optional per-team tracking; do not double-count campaign spend there.',
+  '4. All unentered marketing activity is blank, not a forecast. Verify against CRM and books.',
+  '5. Revisit the growth target and owner-dependence risks before taking your company to market.'
+ ];
+ instructions.forEach((s,i)=>{const row=36+i;sh.mergeCells(row,1,row,9);sh.getCell('A'+row).value=s;sh.getCell('A'+row).alignment={wrapText:true,vertical:'middle'};sh.getRow(row).height=33;});
+ section(sh,43,'PRIORITY ACTIONS',10);
+ const actions=w.values[3].values.slice(13,18).filter(a=>a?.[0]);
+ actions.forEach((a,i)=>{const r=45+i;sh.mergeCells(r,1,r,9);sh.getCell('A'+r).value=a[0].replace(/^'/,'');sh.getRow(r).height=28;});
+ sh.getCell('B14').numFmt='0.0%'; sh.getCell('B30').numFmt='0.0%';
+ for(const r of [10,11,12,13,22,23,24,25,26,29])sh.getCell('B'+r).numFmt=curr;
+ for(let r=5;r<=18;r++){sh.getCell('A'+r).font={bold:true,color:{argb:'FF'+INK}};sh.getCell('B'+r).fill=fill(r%2?'F5F8FB':'FFFFFF');}
+ for(let r=22;r<=30;r++){sh.getCell('A'+r).fill=fill(PALE);sh.getCell('B'+r).fill=fill(PALE);sh.getCell('B'+r).font={bold:true,color:{argb:'FF'+GREEN}};}
+ sh.pageSetup={orientation:'landscape',fitToPage:true,fitToWidth:1};
+}
+function addRepScorecard(book,p){
+ const sh=book.getWorksheet('KPI DASHBOARD');
+ section(sh,62,'OPTIONAL TEAM PERFORMANCE (FROM DAILY SALES KPI)');
+ const preset=modelPreset(p.model);const headers=['Team Member',preset.daily[0],preset.daily[1],preset.daily[2],preset.daily[4],'Cash Collected','Sales Value','Conversion %'];
+ headers.forEach((x,i)=>{const c=sh.getCell(64,i+1);c.value=x;c.fill=fill(NAVY);c.font={bold:true,color:{argb:'FF'+WHITE}};});
+ p.names.forEach((n,i)=>{
+  const r=65+i; sh.getCell('A'+r).value=safeText(n).replace(/^'/,'');
+  for(const [col,source] of [['B','C'],['C','D'],['D','E'],['E','G'],['F','H'],['G','I']])sh.getCell(col+r).value={formula:`SUMIF('DAILY SALES KPI'!B5:B504,A${r},'DAILY SALES KPI'!${source}5:${source}504)`};
+  sh.getCell('H'+r).value={formula:`IFERROR(E${r}/D${r},0)`};sh.getCell('H'+r).numFmt=pct;
+  for(let c=1;c<=8;c++)sh.getCell(r,c).fill=fill(i%2?'FFFFFF':'F5F8FB');
+ });
 }

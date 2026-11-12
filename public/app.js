@@ -37,3 +37,18 @@ $('buildForm').addEventListener('submit',async e=>{
 window.addEventListener('load',()=>{
   if(window.turnstile)start();else notice('Security check could not load. Refresh this page.');
 });
+
+const modelHints={
+ 'Appointments / consultations':'Track leads, appointments, show rate, closes, collected cash and return on ad spend.',
+ 'E-commerce / online store':'Track sessions, product engagement, carts, checkout completion, orders, acquisition cost and ROAS.',
+ 'Webinar / virtual event':'Track webinar registrations, attendance, appointments, sales and return on ad spend.',
+ 'Retail / in-person':'Track store visitors, inquiries, consultations, purchases and revenue per visitor.',
+ 'B2B / pipeline sales':'Track qualified leads, meetings, proposals, wins, sales cycle and pipeline conversion.',
+ 'Services / local business':'Track inquiries, estimates, scheduled work, won jobs and marketing efficiency.',
+ 'Subscriptions / SaaS':'Track visitors, trials, activations, paid conversions, upgrades and acquisition efficiency.',
+ 'Inbound phone leads':'Track inbound inquiries, answered calls, appointments, offers and sales.',
+ 'Outbound prospecting':'Track prospects, contacts reached, meetings, proposals and won deals.',
+ 'Other':'Track the major conversion steps unique to your business and your revenue economics.'
+};
+const modelPicker=document.getElementById('businessModel');
+if(modelPicker){const updateHint=()=>document.getElementById('modelNote').textContent=modelHints[modelPicker.value]||modelHints.Other;modelPicker.addEventListener('change',updateHint);updateHint();}
